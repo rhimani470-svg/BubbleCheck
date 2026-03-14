@@ -31,10 +31,13 @@ print("Gemini connected! ✅")
 class TextInput(BaseModel):
     text: str
 
+# In-memory storage
+analysis_history = []
+
 def get_bias_score(text: str):
     result = bias_model(text)[0]
     return {
-        "label": result["label"],
+        "label"     : result["label"],
         "confidence": round(result["score"] * 100, 2)
     }
 
@@ -52,11 +55,11 @@ def get_credibility_score(text: str):
         "insane", "crazy", "wild", "terrifying"
     ]
     manipulation_words = [
-    "mainstream media", "fake news", "sheeple", "exposed",
-    "urgent", "share before deleted", "banned video",
-    "they don't want this shared", "wake up people",
-    "hiding", "coverup", "cover up", "suppressed",
-    "silenced", "they don't want", "real truth"
+        "mainstream media", "fake news", "sheeple", "exposed",
+        "urgent", "share before deleted", "banned video",
+        "they don't want this shared", "wake up people",
+        "hiding", "coverup", "cover up", "suppressed",
+        "silenced", "they don't want", "real truth"
     ]
     credibility_boosters = [
         "according to", "research shows", "study finds",
@@ -104,7 +107,6 @@ def get_counter_perspective(text: str):
         prompt = f"""
         You are a neutral journalist. Analyze this content in under 80 words:
         "{text}"
-
         1. What perspective does this favor? (1 line)
         2. Brief counter perspective (2 lines)
         3. Suggested sources (1 line)
@@ -117,6 +119,30 @@ def get_counter_perspective(text: str):
 @app.get("/")
 def home():
     return {"message": "BubbleCheck API is running! 🪞"}
+
+@app.get("/history")
+def get_history():
+    return {
+        "total_analyses": len(analysis_history),
+        "history"       : analysis_history
+    }
+
+@app.get("/stats")
+def get_stats():
+    if not analysis_history:
+        return {"message": "No analyses yet"}
+    biased_count    = sum(1 for h in analysis_history if h["bias_label"] == "BIASED")
+    neutral_count   = sum(1 for h in analysis_history if h["bias_label"] == "NEUTRAL")
+    avg_confidence  = sum(h["bias_confidence"] for h in analysis_history) / len(analysis_history)
+    avg_credibility = sum(h["credibility_score"] for h in analysis_history) / len(analysis_history)
+    return {
+        "total_analyses"     : len(analysis_history),
+        "biased_count"       : biased_count,
+        "neutral_count"      : neutral_count,
+        "avg_bias_confidence": round(avg_confidence, 2),
+        "avg_credibility"    : round(avg_credibility, 2),
+        "most_common_verdict": "Biased" if biased_count > neutral_count else "Neutral"
+    }
 
 @app.post("/analyze")
 def analyze_text(input: TextInput):
@@ -131,9 +157,17 @@ def analyze_text(input: TextInput):
     credibility = get_credibility_score(text)
     counter     = get_counter_perspective(text)
 
+    analysis_history.append({
+        "text"               : text[:100],
+        "bias_label"         : bias["label"],
+        "bias_confidence"    : bias["confidence"],
+        "credibility_score"  : credibility["score"],
+        "credibility_verdict": credibility["verdict"],
+    })
+
     return {
-        "input_text"          : text,
-        "bias_analysis"       : bias,
-        "credibility"         : credibility,
-        "counter_perspective" : counter
+        "input_text"         : text,
+        "bias_analysis"      : bias,
+        "credibility"        : credibility,
+        "counter_perspective": counter
     }
